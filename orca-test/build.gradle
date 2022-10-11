@@ -1,0 +1,105 @@
+plugins {
+    id 'groovy'
+    id 'com.palantir.docker' version '0.34.0'
+//    id 'com.palantir.docker-run' version '0.34.0'
+}
+
+version = "1.0"
+description = "Tests for the ORCA tool"
+
+// Spock works with Java 1.8 and above
+sourceCompatibility = 1.8
+
+repositories {
+    // Spock releases are available from Maven Central
+    mavenCentral()
+    // Spock snapshots are available from the Sonatype OSS snapshot repository
+    maven { url "https://oss.sonatype.org/content/repositories/snapshots/" }
+}
+
+dependencies {
+    // mandatory dependencies for using Spock
+    testImplementation platform('org.apache.groovy:groovy-bom:4.0.5')
+    testImplementation 'org.apache.groovy:groovy'
+    testImplementation platform("org.spockframework:spock-bom:2.2-groovy-4.0")
+    testImplementation "org.spockframework:spock-core"
+    testImplementation "org.spockframework:spock-junit4"  // you can remove this if your code does not rely on old JUnit 4 rules
+
+    // optional dependencies for using Spock
+    testImplementation "org.hamcrest:hamcrest-core:2.2"   // only necessary if Hamcrest matchers are used
+
+    testImplementation "commons-io:commons-io:2.11.0"
+}
+
+ext {
+    orca_home_container_path = '/orca-local'
+}
+
+// Define how the testing container (with Orca scripts inside) will look like
+docker {
+    name 'liferay-docker/orca:latest'
+    tag 'docker-hub', 'liferay-docker/orca:latest'
+    dockerfile project.file('Dockerfile.orca')
+    files new File(projectDir.parentFile, 'orca')       // the context for the COPy instructions inside the Dockerfile.orca)
+
+    buildArgs([
+            ORCA_LOCAL_HOME: orca_home_container_path
+    ])
+
+    pull true
+    noCache false
+}
+
+ext {
+    orca_test__runtime_impl = 'docker'  // the only supported for now; in the future, it will be read from Gradle args / properties
+    orca_test_docker__shared_volume_host_path = file("${project.buildDir}/orca-test/orca_shared-volume")
+    orca_test_docker__builds_host_path = file("${project.buildDir}/orca-test/orca_builds")
+
+    orca_container_name = 'orca-test'
+
+    orca_command_parts_separator = '_###_'
+    orca_run_command_parts = [
+            'docker',
+            'run',
+            '--rm',
+            '-v', '/var/run/docker.sock:/var/run/docker.sock',
+            '-v', "${orca_test_docker__shared_volume_host_path}:/opt/liferay/shared-volume",
+            '-v', "${orca_test_docker__builds_host_path}:${orca_home_container_path}/builds",
+            '--name', orca_container_name,
+            docker.name
+    ]
+    orca_clean_command_parts = [
+            'docker',
+            'rm',
+            '-f',
+            orca_container_name
+    ]
+}
+
+test {
+    systemProperty 'ORCA_TEST__SPEC_RESULTS_BASE_PATH', file("${project.buildDir}/orca-test/spec-results")
+    
+    systemProperty 'ORCA_TEST__RUNTIME_IMPL', orca_test__runtime_impl
+
+    // Used just by the 'docker' impl, see DockerOrca.groovy
+    systemProperty 'ORCA_TEST_DOCKER__COMMAND_PARTS_SEPARATOR', orca_command_parts_separator
+    systemProperty 'ORCA_TEST_DOCKER__RUN_COMMAND_PARTS', orca_run_command_parts.join(orca_command_parts_separator)
+    systemProperty 'ORCA_TEST_DOCKER__CLEAN_COMMAND_PARTS', orca_clean_command_parts.join(orca_command_parts_separator)
+    systemProperty 'ORCA_TEST_DOCKER__SHARED_VOLUME_PATH', orca_test_docker__shared_volume_host_path
+    systemProperty 'ORCA_TEST_DOCKER__BUILDS_PATH', orca_test_docker__builds_host_path
+
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+
+    testLogging.showStandardStreams = true
+}
+
+tasks.getByName('test').configure {
+    outputs.upToDateWhen { false }
+
+    if (orca_test__runtime_impl == 'docker') {
+        dependsOn 'docker'
+    }
+}

@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1.4
+# https://hub.docker.com/_/ubuntu/tags?page=1&name=jammy
+FROM ubuntu:jammy
+
+# TARGETARCH comes from Docker itself, requires BuildKit
+ARG TARGETARCH
+
+# Users can always overide the arch to fetch yq, using --build-arg
+ARG YQ_CPU_ARCH=$TARGETARCH
+
+# /orca/scripts/install_orca.sh installs 'yq' using 'snap', which is Ubuntu Desktop mainly; install yq manually
+#   * https://lindevs.com/install-yq-on-ubuntu/
+#   * https://github.com/mikefarah/yq/releases
+RUN <<INSTALL_YQ
+    set -ex
+    apt-get update
+    apt-get install -y wget
+    
+    provided_cpu_arch=$YQ_CPU_ARCH
+    detected_cpu_arch=$(uname -m)
+    used_yq_cpu_arch=${provided_cpu_arch:-$detected_cpu_arch}
+    wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${used_yq_cpu_arch}
+    chmod a+x /usr/local/bin/yq
+    
+    yq --version
+INSTALL_YQ
+
+# Its the location of ORCA as copied by the Docker build (NOT as fetched by git in install_orca.sh)
+# We want to test the locally available Orca sources, not the latest 'master' from Github
+ARG ORCA_LOCAL_HOME=/orca-local
+
+COPY . $ORCA_LOCAL_HOME
+
+RUN <<INSTALL_ORCA
+    set -ex
+    chmod a+x $ORCA_LOCAL_HOME/scripts/install_orca.sh
+    $ORCA_LOCAL_HOME/scripts/install_orca.sh
+
+    docker version --format 'Docker (Client Version): {{.Client.Version}}' || true
+
+    # The previous actually pulls "master" from github, so we'd not be testing the current version in this commit, but the latest one... \
+    # Override the /usr/local/bin/orca (~ orca on PATH)
+    $ORCA_LOCAL_HOME/scripts/orca.sh install
+
+    cat /usr/local/bin/orca
+INSTALL_ORCA
+
+WORKDIR $ORCA_LOCAL_HOME
+ENTRYPOINT [ "orca" ]
+# there is no "help" command, <empty> actually prints help and exits
+CMD [ "" ]
