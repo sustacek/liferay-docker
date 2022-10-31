@@ -27,25 +27,34 @@ INSTALL_YQ
 
 # Its the location of ORCA as copied by the Docker build (NOT as fetched by git in install_orca.sh)
 # We want to test the locally available Orca sources, not the latest 'master' from Github
-ARG ORCA_LOCAL_HOME=/orca-local
+ARG ORCA_HOME_CURRENT_COMMIT
 
-COPY . $ORCA_LOCAL_HOME
+# The source (".") directory for thie COPY instruction will be built by Gradle,
+# see build.gradle -> docker -> files ...
+COPY . $ORCA_HOME_CURRENT_COMMIT
 
 RUN <<INSTALL_ORCA
     set -ex
-    chmod a+x $ORCA_LOCAL_HOME/scripts/install_orca.sh
-    $ORCA_LOCAL_HOME/scripts/install_orca.sh
+    chmod a+x $ORCA_HOME_CURRENT_COMMIT/scripts/install_orca.sh
+    $ORCA_HOME_CURRENT_COMMIT/scripts/install_orca.sh
 
     docker version --format 'Docker (Client Version): {{.Client.Version}}' || true
 
     # The previous actually pulls "master" from github, so we'd not be testing the current version in this commit, but the latest one... \
     # Override the /usr/local/bin/orca (~ orca on PATH)
-    $ORCA_LOCAL_HOME/scripts/orca.sh install
+    $ORCA_HOME_CURRENT_COMMIT/scripts/orca.sh install
 
     cat /usr/local/bin/orca
 INSTALL_ORCA
 
-WORKDIR $ORCA_LOCAL_HOME
+WORKDIR $ORCA_HOME_CURRENT_COMMIT
+
+# Environment variables recogned by Orca, AFAIK
+ENV ORCA_DB_BOOTSTRAP=""
+ENV ORCA_DB_SKIP_WAIT=""
+ENV ORCA_CONFIG=""
+ENV ORCA_HOST=""
+
 ENTRYPOINT [ "orca" ]
 # there is no "help" command, <empty> actually prints help and exits
 CMD [ "" ]

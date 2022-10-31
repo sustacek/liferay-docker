@@ -33,7 +33,8 @@ dependencies {
 }
 
 ext {
-    orca_home_container_path = '/orca-local'
+    // the location inside the image where the Orca sources from the current commit will be placed
+    orca_home_container_path = '/orca_current-commit'
 }
 
 // Define how the testing container (with Orca scripts inside) will look like
@@ -41,10 +42,15 @@ docker {
     name 'liferay-docker/orca:latest'
     tag 'docker-hub', 'liferay-docker/orca:latest'
     dockerfile project.file('Dockerfile.orca')
-    files new File(projectDir.parentFile, 'orca')       // the context for the COPy instructions inside the Dockerfile.orca)
+
+    // build the context for the COPY instructions used inside the Dockerfile.orca
+    files ([
+            new File(projectDir.parentFile, 'orca'),    // the Orca sources in this repo
+            'src/test/resources/orca-overrides'         // test's additions for Orca files
+    ])
 
     buildArgs([
-            ORCA_LOCAL_HOME: orca_home_container_path
+            ORCA_HOME_CURRENT_COMMIT: orca_home_container_path
     ])
 
     pull true
